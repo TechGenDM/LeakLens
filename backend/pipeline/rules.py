@@ -23,8 +23,9 @@ KNOWN_MERCHANT_MAP = {
     "AWS": ("AWS Cloud", "subscription_or_saas"),
     "CLOUDFLARE": ("Cloudflare", "subscription_or_saas"),
     "SPOTIFY": ("Spotify", "subscription_or_saas"),
-    "COURSERA": ("Coursera", "subscription_or_saas"),
+    "COURSERA": ("Coursera Plus", "subscription_or_saas"),
     "XBOX": ("Xbox Game Pass", "subscription_or_saas"),
+    "CHEGG": ("Chegg Study", "subscription_or_saas"),
     "DISCORD": ("Discord Nitro", "subscription_or_saas"),
     "APPLE STORE": ("Apple Store (Hardware)", "essential_living"),
     "APPLE RETAIL": ("Apple Store (Hardware)", "essential_living"),
@@ -33,6 +34,8 @@ KNOWN_MERCHANT_MAP = {
     "APPLE.COM/BILL": ("Apple Music", "subscription_or_saas"),
     "APPLE": ("Apple Services", "subscription_or_saas"),
     "DOORDASH*DASHPASS": ("DoorDash DashPass", "subscription_or_saas"),
+    "UBER*ONE": ("Uber One", "subscription_or_saas"),
+    "UBER ONE": ("Uber One", "subscription_or_saas"),
     "UBER*EATS": ("Uber Eats Pass", "subscription_or_saas"),
     "FIGMA": ("Figma", "subscription_or_saas"),
     "ADOBE": ("Adobe Creative Cloud", "subscription_or_saas"),
@@ -342,7 +345,9 @@ def analyze_transactions(df: pd.DataFrame) -> Tuple[List[Dict[str, Any]], Dict[s
                 "is_micro_charge": is_micro_charge,
                 "charge_count_90d": charge_count_90d,
                 "days_since_first_seen": days_since_first_seen,
-                "is_trial_conversion_pattern": is_trial_conversion_pattern
+                "is_trial_conversion_pattern": is_trial_conversion_pattern,
+                "is_essential_pos": 1 if category == "essential_living" else 0,
+                "has_rule_flag": 1 if any(f in rule_flags for f in ["PRICE_HIKE", "DUPLICATE_SAME_MONTH", "TRIAL_CONVERSION", "IDLE_INFRA_CREEP", "ANNUAL_SURPRISE_RENEWAL"]) else 0
             }
         })
 

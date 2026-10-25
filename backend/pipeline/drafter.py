@@ -7,11 +7,22 @@ Supports Groq (llama-3.3-70b-versatile), local Ollama (qwen2.5/llama3), or offli
 
 import os
 import uuid
+import json
+import logging
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 import httpx
+from dotenv import load_dotenv
+
+# Load backend/.env
+ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(ENV_PATH)
+
+logger = logging.getLogger("leaklens.drafter")
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+OLLAMA_DEFAULT_URL = "http://localhost:11434/v1/chat/completions"
 
 def generate_ics_reminder(merchant_name: str, monthly_cost: float, next_predicted_date_str: str) -> str:
     """
@@ -169,10 +180,7 @@ async def draft_action_bundle(merchant: Dict[str, Any]) -> Dict[str, Any]:
 
     ics_content = generate_ics_reminder(m_name, cost, next_date)
 
-    groq_api_key = os.getenv("GROQ_API_KEY")
-    if groq_api_key:
-        try:
-            prompt = f"""You are LeakLens AI, an expert consumer protection advocate and negotiation specialist.
+    prompt = f"""You are LeakLens AI, an expert consumer protection advocate and negotiation specialist.
 Generate two distinct artifacts for the following merchant subscription:
 Merchant: {m_name}
 Raw Descriptor: {raw_desc}
@@ -181,43 +189,91 @@ Price Change: +{drift*100:.1f}%
 Rule Flags: {', '.join(flags)}
 Next Predicted Billing Date: {next_date}
 
-Format your response strictly as JSON with keys:
+Format your response strictly as valid JSON with keys:
 "cancellation_email": (formal, sharp, legally-grounded cancellation and refund letter citing FTC rules and exact descriptor)
 "negotiation_script": (polite yet firm price-match and loyalty discount negotiation script)
 """
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                res = await client.post(
-                    GROQ_API_URL,
-                    headers={
-                        "Authorization": f"Bearer {groq_api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": "llama-3.3-70b-versatile",
-                        "messages": [
-                            {"role": "system", "content": "You output valid JSON with keys cancellation_email and negotiation_script."},
-                            {"role": "user", "content": prompt}
-                        ],
-                        "temperature": 0.2,
-                        "response_format": {"type": "json_object"}
-                    }
-                )
-                if res.status_code == 200:
-                    data = res.json()
-                    import json
-                    content = json.loads(data["choices"][0]["message"]["content"])
-                    return {
-                        "cancellation_email": content.get("cancellation_email", build_template_cancellation_email(merchant)),
-                        "negotiation_script": content.get("negotiation_script", build_template_negotiation_script(merchant)),
-                        "ics_content": ics_content,
-                        "model_used": "groq/llama-3.3-70b-versatile"
-                    }
-        except Exception:
-            pass
 
+    groq_api_key = os.getenv("GROQ_API_KEY")
+    if groq_api_key and groq_api_key.strip():
+        # Open-weight models supported on Groq
+        model_candidates = [
+            os.getenv("GROQ_MODEL"),
+            "qwen/qwen3.8-27b",
+            "llama-3.3-70b-versatile",
+            "llama-3.1-70b-versatile",
+            "llama-3.1-8b-instant"
+        ]
+        candidate_models = [m for m in model_candidates if m]
+
+        for model_name in candidate_models:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    res = await client.post(
+                        GROQ_API_URL,
+                        headers={
+                            "Authorization": f"Bearer {groq_api_key.strip()}",
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "model": model_name,
+                            "messages": [
+                                {"role": "system", "content": "You output valid JSON with keys cancellation_email and negotiation_script."},
+                                {"role": "user", "content": prompt}
+                            ],
+                            "temperature": 0.2,
+                            "response_format": {"type": "json_object"}
+                        }
+                    )
+                    if res.status_code == 200:
+                        data = res.json()
+                        content = json.loads(data["choices"][0]["message"]["content"])
+                        return {
+                            "cancellation_email": content.get("cancellation_email", build_template_cancellation_email(merchant)),
+                            "negotiation_script": content.get("negotiation_script", build_template_negotiation_script(merchant)),
+                            "ics_content": ics_content,
+                            "model_used": f"groq/{model_name}"
+                        }
+                    elif res.status_code == 404:
+                        # Model not available on this endpoint, try next candidate
+                        continue
+                    else:
+                        logger.warning(f"Groq API returned HTTP {res.status_code}: {res.text}")
+            except Exception as e:
+                logger.warning(f"Groq generation failed with model {model_name}: {e}")
+
+    # Fallback to local Ollama if available
+    ollama_url = os.getenv("OLLAMA_API_URL", "http://localhost:11434")
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            ollama_res = await client.post(
+                f"{ollama_url}/v1/chat/completions",
+                json={
+                    "model": "qwen2.5:latest",
+                    "messages": [
+                        {"role": "system", "content": "You output valid JSON with keys cancellation_email and negotiation_script."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.2,
+                    "format": "json"
+                }
+            )
+            if ollama_res.status_code == 200:
+                data = ollama_res.json()
+                content = json.loads(data["choices"][0]["message"]["content"])
+                return {
+                    "cancellation_email": content.get("cancellation_email", build_template_cancellation_email(merchant)),
+                    "negotiation_script": content.get("negotiation_script", build_template_negotiation_script(merchant)),
+                    "ics_content": ics_content,
+                    "model_used": "ollama/qwen2.5"
+                }
+    except Exception:
+        pass
+
+    # Deterministic ROSCA & FTC Part 425 template fallback
     return {
         "cancellation_email": build_template_cancellation_email(merchant),
         "negotiation_script": build_template_negotiation_script(merchant),
         "ics_content": ics_content,
-        "model_used": "open-weight-template-engine"
+        "model_used": "open-weight-template-engine (fallback: set GROQ_API_KEY in backend/.env)"
     }

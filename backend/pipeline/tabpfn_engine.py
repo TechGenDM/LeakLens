@@ -12,6 +12,11 @@ from typing import Dict, Any, List, Tuple
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
+from dotenv import load_dotenv
+
+# Load local environment variables from backend/.env
+ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(ENV_PATH)
 
 logger = logging.getLogger("leaklens.tabpfn")
 
@@ -26,7 +31,9 @@ CLASSIFIER_FEATURES = [
     "is_micro_charge",
     "charge_count_90d",
     "days_since_first_seen",
-    "is_trial_conversion_pattern"
+    "is_trial_conversion_pattern",
+    "is_essential_pos",
+    "has_rule_flag"
 ]
 
 REGRESSOR_FEATURES = [
@@ -54,9 +61,16 @@ class TabPFNEngine:
             os.getenv("RENDER_CLOUD_SANDBOX", "false").lower() in ("true", "1", "yes")
             or bool(os.getenv("RENDER"))
         )
-        self.mode = "cloud_sandbox" if self.is_cloud_sandbox else os.getenv("TABPFN_MODE", "local").lower()
         self.api_key = os.getenv("PRIORLABS_API_KEY") or os.getenv("TABPFN_TOKEN")
         self._ensure_auth_token()
+
+        tabpfn_mode_env = os.getenv("TABPFN_MODE", "").strip().lower()
+        if tabpfn_mode_env in ("client", "api"):
+            self.mode = "client"
+        elif self.is_cloud_sandbox:
+            self.mode = "client" if self.api_key else "cloud_sandbox"
+        else:
+            self.mode = tabpfn_mode_env or "local"
 
         self.classifier = None
         self.classifier_fitted = False
@@ -152,26 +166,9 @@ class TabPFNEngine:
         inference_ms = round((time.perf_counter() - t0) * 1000, 2)
 
         for m, raw_prob in zip(merchants, probabilities):
-            category = m.get("merchant_category", "essential_living")
-            has_leak_flag = any(f in m.get("rule_flags", []) for f in LEAK_RULE_FLAGS)
-
-            if category == "essential_living":
-                # Strict: Essential Living expenses (Rent, Utilities, Food, Groceries) are never leaks
-                m["tabpfn_leak_prob"] = float(np.round(min(raw_prob * 0.05, 0.015), 4))
-                m["is_leak"] = False
-            else:
-                # Subscription or SaaS
-                if has_leak_flag:
-                    # Deterministically proved leak: calibrate probability to high confidence 89%-99.9%
-                    calibrated = max(float(raw_prob), 0.892)
-                    m["tabpfn_leak_prob"] = float(np.round(min(0.999, calibrated), 4))
-                    m["is_leak"] = True
-                else:
-                    # Clean recurring subscription without leak flags
-                    # Calibrate risk to < 18% so it stays green and is_leak is strictly False
-                    calibrated = min(float(raw_prob) * 0.18, 0.14)
-                    m["tabpfn_leak_prob"] = float(np.round(calibrated, 4))
-                    m["is_leak"] = False
+            p = float(np.round(float(raw_prob), 4))
+            m["tabpfn_leak_prob"] = p
+            m["is_leak"] = bool(p >= 0.50)
 
         return merchants, inference_ms
 
@@ -271,16 +268,9 @@ class TabPFNEngine:
         forecast_points = []
         for i, row in future_df.iterrows():
             week_num = int(row["week"])
+            baseline_p10 = float(np.round(p10_vals[i], 2))
             baseline_median = float(np.round(p50_vals[i], 2))
-
-            # Ensure baseline balance stays positive and realistic
-            baseline_median = max(1200.0, baseline_median)
-
-            # Constrain p10 and p90 to a tight realistic uncertainty envelope around p50 (±8% to ±10%)
-            # This prevents unrealistic $30,000 swings that crush chart resolution
-            spread = max(200.0, baseline_median * 0.08)
-            baseline_p10 = float(np.round(baseline_median - spread, 2))
-            baseline_p90 = float(np.round(baseline_median + spread, 2))
+            baseline_p90 = float(np.round(p90_vals[i], 2))
 
             cumulative_saved = float(np.round(weekly_leak_savings * week_num, 2))
             reclaimed_median = float(np.round(baseline_median + cumulative_saved, 2))
@@ -305,23 +295,29 @@ class TabPFNEngine:
         y_hist: np.ndarray,
         X_future: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Runs TabPFNRegressor with quantiles [0.1, 0.5, 0.9] or fallback quantile regression."""
+        """Runs TabPFNRegressor with quantiles [0.1, 0.5, 0.9] or data-driven empirical fallback."""
         if self.is_cloud_sandbox and not self.api_key:
-            # Render Cloud Sandbox (512MB RAM): fast calibrated trend regression
+            # Render Cloud Sandbox (512MB RAM without API key): empirical residual quantile regression
             n = len(X_hist)
             t = np.arange(n)
             slope, intercept = np.polyfit(t, y_hist, 1)
+            residuals = y_hist - (slope * t + intercept)
             future_t = n + np.arange(1, len(X_future) + 1) * 7
             future_base = slope * future_t + intercept
 
-            p50 = np.maximum(1200.0, future_base)
-            spread = np.maximum(200.0, np.abs(p50) * 0.08)
-            p10 = p50 - spread
-            p90 = p50 + spread
+            p10_offset = float(np.percentile(residuals, 10))
+            p90_offset = float(np.percentile(residuals, 90))
+
+            p50 = future_base
+            p10 = future_base + p10_offset
+            p90 = future_base + p90_offset
             return p10, p50, p90
 
         try:
             if self.mode == "client" and self.api_key:
+                import tabpfn_client
+                tabpfn_client.set_access_token(self.api_key)
+                tabpfn_client.init()
                 from tabpfn_client import TabPFNRegressor as RegClass
                 reg = RegClass()
             else:
@@ -332,17 +328,20 @@ class TabPFNEngine:
             quantiles = reg.predict(X_future, output_type="quantiles", quantiles=[0.1, 0.5, 0.9])
             return quantiles[0], quantiles[1], quantiles[2]
         except Exception as e:
-            logger.warning(f"TabPFNRegressor failed: {e}. Using calibrated trend regression fallback.")
+            logger.warning(f"TabPFNRegressor failed: {e}. Using empirical residual quantile regression.")
             n = len(X_hist)
             t = np.arange(n)
             slope, intercept = np.polyfit(t, y_hist, 1)
+            residuals = y_hist - (slope * t + intercept)
             future_t = n + np.arange(1, len(X_future) + 1) * 7
             future_base = slope * future_t + intercept
 
-            p50 = np.maximum(1200.0, future_base)
-            spread = np.maximum(200.0, np.abs(p50) * 0.08)
-            p10 = p50 - spread
-            p90 = p50 + spread
+            p10_offset = float(np.percentile(residuals, 10))
+            p90_offset = float(np.percentile(residuals, 90))
+
+            p50 = future_base
+            p10 = future_base + p10_offset
+            p90 = future_base + p90_offset
             return p10, p50, p90
 
 # Singleton instance
