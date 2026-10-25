@@ -1,0 +1,37 @@
+services:
+  # 1. FastAPI Backend + TabPFN Inference Service
+  - type: web
+    name: leaklens-api
+    runtime: python
+    plan: standard
+    region: oregon
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && python generate_datasets.py
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: RENDER_CLOUD_SANDBOX
+        value: "true"
+      - key: TABPFN_MODE
+        value: local
+      - key: GROQ_API_KEY
+        sync: false
+
+  # 2. Next.js 15 Frontend Ledger Workbench
+  - type: web
+    name: leaklens-web
+    runtime: node
+    plan: starter
+    region: oregon
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: 20.18.0
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: leaklens-api
+          property: host

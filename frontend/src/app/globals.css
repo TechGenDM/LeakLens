@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: var(--font-serif), "Instrument Serif", Georgia, serif;
+  --font-sans: var(--font-sans), "Plus Jakarta Sans", -apple-system, sans-serif;
+  --font-mono: var(--font-mono), "JetBrains Mono", monospace;
+
+  --color-canvas: #F6F4EE;
+  --color-panel: #FDFCF9;
+  --color-stone: #EFECE4;
+  --color-ink: #111315;
+  --color-ink-muted: #5A5D64;
+  --color-hairline: #DFDBD0;
+
+  --color-emerald-accent: #0D6E52;
+  --color-emerald-tint: #E6F4EF;
+
+  --color-vermilion-accent: #C93B2B;
+  --color-vermilion-tint: #FCECE9;
+
+  --color-ochre-accent: #B45309;
+  --color-ochre-tint: #FEF3C7;
+}
+
+:root {
+  --canvas: #F6F4EE;
+  --panel: #FDFCF9;
+  --stone: #EFECE4;
+  --ink: #111315;
+  --ink-muted: #5A5D64;
+  --hairline: #DFDBD0;
+  --emerald: #0D6E52;
+  --emerald-tint: #E6F4EF;
+  --vermilion: #C93B2B;
+  --vermilion-tint: #FCECE9;
+  --ochre: #B45309;
+  --ochre-tint: #FEF3C7;
+}
+
+* {
+  border-color: var(--hairline);
+}
+
+body {
+  background-color: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
