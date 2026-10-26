@@ -1,6 +1,25 @@
 import { AuditResponse, PersonaMetadata, ActionDraftRequest, ActionDraftResponse } from "@/types/audit";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+/**
+ * Resolve the API base URL.
+ * - In the browser: use "" (empty string) so fetch hits /api/* on the same origin,
+ *   which Next.js rewrites proxy to the real backend (bypasses CORS entirely).
+ * - During SSR / Node: use the full backend URL so server-side fetches reach the API.
+ */
+function getApiBase(): string {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL ?? "";
+  // Strip trailing slash to prevent double-slash in URLs
+  const cleaned = envUrl.replace(/\/+$/, "");
+
+  if (typeof window !== "undefined") {
+    // Client-side: always use relative paths through Next.js rewrite proxy
+    return "";
+  }
+  // Server-side (SSR): use the explicit backend URL
+  return cleaned || "https://leaklens-api-akh1.onrender.com";
+}
+
+const API_BASE_URL = getApiBase();
 
 export async function fetchPersonas(): Promise<PersonaMetadata[]> {
   try {

@@ -18,6 +18,11 @@ from dotenv import load_dotenv
 # Load local environment variables if available
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
+import sys
+_backend_parent = str(Path(__file__).resolve().parent.parent)
+if _backend_parent not in sys.path:
+    sys.path.insert(0, _backend_parent)
+
 from backend.pipeline.rules import analyze_transactions
 from backend.pipeline.tabpfn_engine import get_tabpfn_engine
 from backend.pipeline.drafter import draft_action_bundle
@@ -31,10 +36,15 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS configuration
+# CORS configuration — explicit origins for Render + localhost dev
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://leaklens-web.onrender.com",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_origin_regex=r"https://.*\.onrender\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
