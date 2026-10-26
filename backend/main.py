@@ -50,7 +50,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DATA_DIR = Path(__file__).resolve().parent / "data"
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+if not DATA_DIR.exists():
+    DATA_DIR = BASE_DIR.parent / "backend" / "data"
+if not DATA_DIR.exists():
+    DATA_DIR = Path.cwd() / "backend" / "data"
+if not DATA_DIR.exists():
+    DATA_DIR = Path.cwd() / "data"
 
 PERSONA_METADATA = {
     "persona_dev": {
@@ -152,10 +159,12 @@ async def run_audit(
                 detail=f"Invalid persona_id: '{persona_id}'. Valid choices: {list(PERSONA_METADATA.keys())}"
             )
         csv_file = DATA_DIR / PERSONA_METADATA[persona_id]["filename"]
+        logger.info(f"Looking for dataset at: {csv_file}")
         if not csv_file.exists():
+            logger.error(f"Persona file not found at: {csv_file}. DATA_DIR resolved to {DATA_DIR}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Persona file {csv_file.name} not found. Please run generate_datasets.py."
+                detail=f"Persona file {csv_file.name} not found at {csv_file}. Please run generate_datasets.py."
             )
         df = pd.read_csv(csv_file)
         source_name = persona_id

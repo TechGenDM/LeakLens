@@ -5,11 +5,21 @@
 
 ---
 
-![LeakLens Banner](https://img.shields.io/badge/FOUNDATION%20MODEL-TabPFN--3.5%20(Prior%20Labs)-0D6E52?style=for-the-badge&labelColor=111315)
+![Foundation Model](https://img.shields.io/badge/FOUNDATION%20MODEL-TabPFN--3.5%20(Prior%20Labs)-0D6E52?style=for-the-badge&labelColor=111315)
 ![Architecture](https://img.shields.io/badge/ARCHITECTURE-Three--Layer%20Neuro--Symbolic-111315?style=for-the-badge)
 ![Privacy](https://img.shields.io/badge/PRIVACY-100%25%20Local%20Open--Weights-0D6E52?style=for-the-badge)
 ![Next.js](https://img.shields.io/badge/FRONTEND-Next.js%2015%20(App%20Router)-111315?style=for-the-badge)
 ![FastAPI](https://img.shields.io/badge/BACKEND-Python%20FastAPI%20%2B%20Pandas-111315?style=for-the-badge)
+
+---
+
+<p align="center">
+  <img src="./assets/leaklens-dashboard.png" alt="LeakLens Swiss Financial Ledger Workbench" width="100%" />
+</p>
+
+<p align="center">
+  <em>The LeakLens Swiss Ledger Workbench — In-context probabilistic leak synthesis via TabPFN-3.5, 90-day multi-quantile cash runway simulation, and tactile kill-switch controls.</em>
+</p>
 
 ---
 

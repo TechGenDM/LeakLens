@@ -20,7 +20,12 @@ load_dotenv(ENV_PATH)
 
 logger = logging.getLogger("leaklens.tabpfn")
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / "data"
+if not DATA_DIR.exists():
+    DATA_DIR = Path.cwd() / "backend" / "data"
+if not DATA_DIR.exists():
+    DATA_DIR = Path.cwd() / "data"
 SEED_CSV_PATH = DATA_DIR / "seed_training.csv"
 
 # Feature definitions matching seed_training.csv
